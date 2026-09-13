@@ -351,21 +351,6 @@ DynamoDB status updated
 
 <a id="cleanup"></a>
 
-## Step 13 — 🧹 Cleanup
-
-If the project is no longer needed, delete resources to avoid future usage charges.
-
-Recommended cleanup:
-
-1. Disable/delete the CloudFront distribution after it is disabled.
-2. Empty and delete the S3 buckets if their contents are no longer needed.
-3. Delete API Gateway.
-4. Delete the Lambda functions.
-5. Delete the DynamoDB table.
-6. Delete the SNS topic/subscription.
-7. Delete the IAM role/policy if no longer used.
-
-> If you are still using the project for learning or presentation, you can keep it deployed while monitoring AWS Billing.
 
 ---
 
