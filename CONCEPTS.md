@@ -1,69 +1,48 @@
 <a id="top"></a>
 
-# 🧠 Design Concepts & Rationale — AWS Document Approval System
+# 🧠 Design Concepts & Rationale
 
-> The questions below are the most important concepts to understand before presenting the architecture to an instructor or interviewer.
+> The main architecture and security concepts to understand before presenting the project to an instructor.
 
 ## 📋 Quick Navigation
 
-| Topic | Section |
-|---|---|
-| 🌍 | [Frontend Delivery](#frontend) |
-| 🪣 | [S3 & OAC](#s3) |
-| ⚡ | [Serverless Architecture](#serverless) |
-| 🔌 | [API Gateway](#api) |
-| 🗃 | [DynamoDB](#dynamodb) |
-| 📣 | [SNS](#sns) |
-| 🔑 | [Approval Security](#approval) |
-| 🔒 | [CORS](#cors) |
-| 🛡 | [IAM](#iam) |
-| 🔄 | [State Management](#state) |
-| 💰 | [Cost](#cost) |
-| 🚀 | [Future Improvements](#improvements) |
+- [Architecture](#architecture)
+- [S3 + CloudFront + OAC](#oac)
+- [Serverless](#serverless)
+- [API Gateway](#api)
+- [DynamoDB](#dynamodb)
+- [SNS](#sns)
+- [Approval Token](#token)
+- [CORS](#cors)
+- [IAM](#iam)
+- [State Management](#state)
+- [Cost](#cost)
+- [Presentation](#presentation)
 
----
+<a id="architecture"></a>
 
-<a id="frontend"></a>
+## 🏗 Architecture
 
-## 🌍 Frontend Delivery
+![Architecture Diagram](screenshots/architecture-diagram.png)
 
-### Why S3 + CloudFront?
-
-The frontend consists of static files, so it does not require a continuously running web server.
+The architecture has four main stages:
 
 ```text
-CloudFront
-    ↓
-Private S3
+1. Frontend delivery
+2. Document submission
+3. Approval decision
+4. State + notification
 ```
 
-CloudFront provides the public HTTPS delivery layer while S3 stores the static files.
+The frontend is delivered by CloudFront from a private S3 bucket. API Gateway exposes the backend endpoints. Lambda performs the application logic, DynamoDB stores the workflow state, and SNS sends email notifications.
 
-### Why not use S3 Website Hosting?
+<a id="oac"></a>
 
-With the private-bucket design, the project does not need S3 Website Hosting.
+## 🌍 Why S3 + CloudFront + OAC?
 
-CloudFront reads the bucket through the S3 origin API using OAC.
+The frontend is static, so S3 is suitable for storage and CloudFront provides the public HTTPS delivery layer.
 
-This allows:
-
-```text
-S3 Block Public Access = ON
-```
-
-while still serving the website publicly through CloudFront.
-
----
-
-<a id="s3"></a>
-
-## 🪣 S3 & Origin Access Control
-
-### What is OAC?
-
-**Origin Access Control** allows CloudFront to access an S3 origin while keeping the bucket private.
-
-The security model is:
+The important security decision is **Origin Access Control (OAC)**.
 
 ```text
 Internet
@@ -75,121 +54,59 @@ OAC
 Private S3
 ```
 
-Instead of:
+This avoids making the frontend bucket publicly readable.
 
-```text
-Internet
-   ↓
-Public S3 bucket
-```
+### Why not public S3?
 
-### Why is this better?
-
-A public bucket exposes the S3 objects directly.
-
-With OAC:
-
-- Block Public Access remains enabled.
-- CloudFront is the intended public entry point.
-- Direct S3 access is not the normal access path.
-
-This reduces the attack surface.
-
----
+A public bucket allows users to access objects directly through S3. With OAC, CloudFront is the intended public entry point while the S3 bucket remains private.
 
 <a id="serverless"></a>
 
-## ⚡ Serverless Architecture
+## ⚡ Why Serverless?
 
-### Why serverless?
+The application does not require a continuously running server.
 
-The workflow is event/request driven.
-
-There is no need for:
+Instead:
 
 ```text
-EC2
-Web Server
-Load Balancer
-```
-
-The main backend path is:
-
-```text
-API Gateway
-      ↓
+API Request
+    ↓
 Lambda
-      ↓
+    ↓
 AWS managed services
 ```
 
-This reduces infrastructure management.
+There is no EC2 instance, web server or load balancer to manage.
 
 ### Why two Lambda functions?
 
-Responsibilities are separated:
-
-| Lambda | Responsibility |
+| Function | Responsibility |
 |---|---|
-| `submit-handler` | Creates the document approval request |
-| `decision-handler` | Processes Approve / Reject |
+| `submit-handler` | Handles document submission and creates the approval request |
+| `decision-handler` | Handles Approve / Reject decisions |
 
-This makes the workflow easier to understand and maintain.
-
----
+Separating the responsibilities makes the workflow easier to understand and maintain.
 
 <a id="api"></a>
 
-## 🔌 API Gateway
+## 🔌 Why API Gateway?
 
-### Why API Gateway?
-
-API Gateway provides the HTTP interface between the frontend/email links and Lambda.
-
-The project exposes:
+API Gateway provides the HTTP interface between the frontend/approval links and Lambda.
 
 ```text
 POST /submit
-GET /decision
+GET  /decision
 ```
 
-This gives the architecture a clear API boundary.
-
-### Why is `/decision` a GET?
-
-The approval link is opened from an email.
-
-A hyperlink can directly open:
-
-```text
-GET /decision?doc_id=...&token=...&action=approve
-```
-
-The Lambda processes the decision and returns a small HTML result page.
-
----
+The `/decision` endpoint is a GET because the approver receives a normal hyperlink in an email.
 
 <a id="dynamodb"></a>
 
-## 🗃 DynamoDB
+## 🗃 Why DynamoDB?
 
-### Why DynamoDB?
-
-The workflow needs to:
-
-- identify a document
-- retrieve its metadata
-- validate its approval token
-- read its current status
-- update the decision
+The application needs to find a document by ID, validate its token, read its current status and update that status.
 
 DynamoDB fits this simple key-value/document access pattern.
-
-### Why On-Demand?
-
-Traffic for a personal approval system is usually low and unpredictable.
-
-On-Demand capacity avoids having to plan provisioned throughput.
 
 ### Main state
 
@@ -199,17 +116,13 @@ APPROVED
 REJECTED
 ```
 
----
+On-Demand capacity is suitable for a low and unpredictable learning/demo workload because capacity does not need to be planned in advance.
 
 <a id="sns"></a>
 
-## 📣 SNS
+## 📣 Why SNS?
 
-### Why SNS?
-
-The application needs email notifications without managing an email server.
-
-The notification flow is:
+SNS provides managed notifications without running an email server.
 
 ```text
 Lambda
@@ -219,75 +132,35 @@ SNS Topic
 Email Subscription
 ```
 
-SNS is therefore separated from the Lambda's core document-storage logic.
+It is used for the approval notification and the configured result notification flow.
 
----
+<a id="token"></a>
 
-<a id="approval"></a>
+## 🔑 Why an Approval Token?
 
-## 🔑 Approval Security
-
-### Why use a token?
-
-The approval URL contains a random per-document token.
-
-Conceptually:
+The approval URL contains both a document ID and a per-document token.
 
 ```text
-Approve URL
-    ↓
 doc_id + token + action
-    ↓
-decision-handler
-    ↓
-DynamoDB
-    ↓
-Compare token
+            ↓
+     decision-handler
+            ↓
+        DynamoDB
 ```
 
-If the token is invalid, the request is rejected.
-
-### Why not Cognito?
-
-The current project is designed around a simple approval workflow with a designated approver.
-
-Cognito would add a complete authentication layer:
-
-```text
-Users
-Passwords
-Authentication
-Sessions/tokens
-Account management
-```
-
-For a small learning project, a per-document approval token keeps the architecture simpler.
-
-For a real multi-user production application, authenticated approvers would be a stronger design.
+The Lambda checks that the supplied token belongs to the requested document before processing the decision.
 
 ### Important limitation
 
-A token in a URL is not the same thing as user authentication.
+A token in a URL is **not the same as user authentication**.
 
-A stronger production implementation could add:
-
-- Cognito
-- token expiration
-- one-time-use tokens
-- conditional DynamoDB updates
-- stronger audit logging
-
----
+For a larger production system, the approval workflow could be strengthened with Cognito authentication, token expiration, one-time-use tokens and conditional DynamoDB updates.
 
 <a id="cors"></a>
 
-## 🔒 CORS
+## 🔒 Why Restrict CORS?
 
-### Why restrict CORS?
-
-The frontend is served from CloudFront.
-
-The backend therefore allows the actual frontend origin instead of:
+The frontend is served from the CloudFront domain, so the API should allow that actual origin rather than using:
 
 ```text
 *
@@ -296,27 +169,20 @@ The backend therefore allows the actual frontend origin instead of:
 Example:
 
 ```text
-ALLOWED_ORIGIN =
-https://<distribution-id>.cloudfront.net
+ALLOWED_ORIGIN=https://<cloudfront-domain>
 ```
 
-### Important interview point
+### Interview point
 
-CORS is a **browser security mechanism**.
-
-It does not replace backend authorization.
-
-The approval token is still checked by the Lambda.
-
----
+CORS is a **browser security mechanism**. It does not replace backend authorization or token validation.
 
 <a id="iam"></a>
 
 ## 🛡 IAM & Least Privilege
 
-Lambda accesses other AWS services through an IAM execution role.
+Lambda accesses AWS services through an IAM execution role.
 
-The goal is:
+The principle is:
 
 ```text
 Only required actions
@@ -324,17 +190,9 @@ Only required actions
 Only required resources
 ```
 
-For example, DynamoDB access should be scoped to the project table when possible.
+Resource ARNs should be restricted where the AWS service supports resource-level permissions.
 
-If an AWS service/action does not support resource-level restriction, `Resource: "*"` may be required.
-
-### Why is this important?
-
-If a Lambda is compromised, overly broad permissions increase the possible impact.
-
-Least privilege reduces that blast radius.
-
----
+Least privilege reduces the possible impact if a function is compromised.
 
 <a id="state"></a>
 
@@ -357,97 +215,61 @@ The document follows a simple state machine:
        └──────────┘  └──────────┘
 ```
 
-### Why check `PENDING`?
+The decision Lambda checks that the document is still `PENDING` before changing its state.
 
-Without a status check, the same document could potentially be processed repeatedly.
-
-The workflow therefore expects a decision only while the document is still pending.
-
-A stronger production version can make the DynamoDB transition conditional/atomic.
-
----
+A stronger production version can use a conditional/atomic DynamoDB update to prevent race conditions when two decision requests arrive at nearly the same time.
 
 <a id="cost"></a>
 
-## 💰 Cost Decisions
+## 💰 Cost
 
-### Why no EC2?
+Serverless does not mean automatically free.
 
-The project does not need a continuously running server.
+Potential charges can come from:
 
-Lambda runs only when invoked.
-
-### Does serverless mean free?
-
-No.
-
-Possible sources of AWS charges include:
-
-- S3 storage
-- S3 requests
-- CloudFront requests/data transfer
+- S3 storage and requests
+- CloudFront traffic
 - API Gateway requests
 - Lambda execution
 - DynamoDB usage
-- SNS usage/email
-- data transfer
+- SNS usage
 
-Actual pricing also depends on the current Free Tier and account eligibility.
+For a small learning project the usage can be very low, but AWS Billing should still be monitored.
 
-For a small development/test workload, usage should be very low.
+<a id="presentation"></a>
 
----
+# 🎤 Instructor Presentation
 
-<a id="improvements"></a>
+### One-minute explanation
 
-## 🚀 Future Improvements
+> **"This is a fully serverless document approval system. The frontend is stored in a private S3 bucket and delivered through CloudFront using Origin Access Control, so the bucket does not need to be public. When the user submits a PDF, the frontend sends the request to API Gateway, which invokes the submit Lambda. The Lambda validates the request, stores the document in S3, creates a PENDING record in DynamoDB, and sends an approval notification through SNS. The approver receives Approve and Reject links. These links call the `/decision` endpoint, which invokes the decision Lambda. It validates the document ID, token, action and current status, then updates DynamoDB to APPROVED or REJECTED and sends the configured result notification. The whole backend is serverless, so there are no EC2 servers to manage."**
 
-### 1. Amazon Cognito
+### Questions the instructor may ask
 
-Add authenticated approver accounts.
+**Why CloudFront?**  
+To provide HTTPS delivery and allow the S3 frontend bucket to remain private through OAC.
 
-### 2. Token expiration
+**Why DynamoDB?**  
+The application needs simple key-based document lookup and status updates.
 
-Store an expiration timestamp and reject expired links.
+**Why SNS?**  
+To send email notifications without managing an email server.
 
-### 3. Atomic status transition
+**Why two Lambdas?**  
+To separate submission logic from approval-decision logic.
 
-Use a conditional DynamoDB update so only a `PENDING` record can transition to a final state.
+**Why CORS restriction?**  
+To allow the real frontend origin instead of every browser origin.
 
-### 4. API throttling
+**Is the token authentication?**  
+No. It is a per-document authorization mechanism. Full user authentication could be added with Cognito.
 
-Add API Gateway throttling to reduce abuse/spam.
-
-### 5. AWS WAF
-
-For a public production deployment, WAF can add another protection layer.
-
-### 6. Infrastructure as Code
-
-Use Terraform or CloudFormation to make the infrastructure reproducible.
-
-### 7. Monitoring
-
-Add CloudWatch dashboards and alarms for:
+**What happens to the document state?**
 
 ```text
-Lambda errors
-API errors
-Unusual traffic
-Notification failures
+PENDING → APPROVED
+       ↘ REJECTED
 ```
-
----
-
-## 🎤 Presentation Summary
-
-If the instructor asks:
-
-> **"Explain your architecture in one minute."**
-
-Use this:
-
-> "The project is a fully serverless document approval system. The frontend is stored in a private S3 bucket and delivered through CloudFront using Origin Access Control, so the bucket does not need to be public. The frontend sends the document submission to API Gateway, which invokes the submit Lambda. The Lambda validates the request, stores the document in S3, creates a PENDING record in DynamoDB, and sends an approval notification through SNS. The approver receives Approve and Reject links. These links call the `/decision` API endpoint, which invokes a second Lambda. The decision Lambda validates the document ID, approval token, action, and current PENDING status, then changes the record to APPROVED or REJECTED and sends the result notification. The whole backend is serverless, so there are no EC2 servers to manage."
 
 ---
 
