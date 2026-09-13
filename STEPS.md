@@ -1,152 +1,189 @@
-# Build Log — AWS Document Approval System
+<a id="top"></a>
 
-A step-by-step record of the resources created for the serverless document approval workflow.
+# 🛠 Build Log — AWS Serverless Document Approval System
 
-## Quick Navigation
+> A step-by-step record of the resources created and configured for the document approval workflow.
+
+## 📋 Quick Navigation
 
 | Step | Section |
 |---|---|
-| 1 | DynamoDB |
-| 2 | SNS |
-| 3 | IAM |
-| 4 | `submit-handler` |
-| 5 | `decision-handler` |
-| 6 | API Gateway |
-| 7 | Temporary `APP_BASE_URL` |
-| 8 | Frontend S3 |
-| 9 | CloudFront + OAC |
-| 10 | Frontend Upload |
-| 11 | Final `APP_BASE_URL` + CORS |
-| 12 | End-to-End Test |
+| 1 | [🗃 DynamoDB Table](#step-1) |
+| 2 | [📣 SNS Topic & Subscription](#step-2) |
+| 3 | [🔐 IAM Role & Policy](#step-3) |
+| 4 | [⚡ `submit-handler`](#step-4) |
+| 5 | [⚡ `decision-handler`](#step-5) |
+| 6 | [🔌 API Gateway](#step-6) |
+| 7 | [🔗 Configure `APP_BASE_URL`](#step-7) |
+| 8 | [🪣 Frontend S3 Bucket](#step-8) |
+| 9 | [🌍 CloudFront + OAC](#step-9) |
+| 10 | [📤 Upload Frontend](#step-10) |
+| 11 | [🔒 Final `APP_BASE_URL` + CORS](#step-11) |
+| 12 | [✅ End-to-End Test](#step-12) |
+| 13 | [🧹 Cleanup](#cleanup) |
 
 ---
 
-## Step 1 — DynamoDB Table
+<a id="step-1"></a>
 
-Create the table:
+## Step 1 — 🗃 DynamoDB Table
 
-```text
-document-approvals
-```
+Create the table used to store document metadata and workflow state.
 
-Settings:
+### Configuration
 
 | Setting | Value |
 |---|---|
+| Table name | `document-approvals` |
 | Partition key | `doc_id` |
-| Type | String |
-| Capacity | On-demand |
+| Key type | String |
+| Capacity mode | On-demand |
 
-The initial document state is:
+The initial workflow status is:
 
 ```text
 PENDING
 ```
 
-Screenshot: `screenshots/01-dynamodb.png`
+### Why?
+
+DynamoDB is used because the application mainly needs fast key-based access to a document record and simple status updates.
+
+📸 Screenshot:
+
+[`screenshots/01-dynamodb.png`](screenshots/01-dynamodb.png)
 
 ---
 
-## Step 2 — SNS Topic & Subscription
+<a id="step-2"></a>
 
-Create:
+## Step 2 — 📣 SNS Topic & Subscription
+
+Create the SNS topic used for approval notifications.
+
+### Configuration
 
 ```text
+Topic name:
 approval-notifications
 ```
 
-Settings:
+Use:
 
-- Type: Standard
-- Protocol: Email
-- Endpoint: approver email
-- Confirm the subscription from the AWS email.
+```text
+Type: Standard
+Protocol: Email
+```
 
-Save the Topic ARN because the Lambda functions use it through `TOPIC_ARN`.
+Confirm the subscription from the AWS email.
 
-Screenshot: `screenshots/02-sns-topic.png`
+### Why?
+
+SNS provides a managed notification layer:
+
+```text
+Lambda
+   ↓
+SNS
+   ↓
+Email
+```
+
+📸 Screenshot:
+
+[`screenshots/02-sns-topic.png`](screenshots/02-sns-topic.png)
 
 ---
 
-## Step 3 — IAM Policy & Role
+<a id="step-3"></a>
 
-Create an IAM policy:
+## Step 3 — 🔐 IAM Role & Policy
+
+Create the Lambda execution role:
+
+```text
+document-approval-lambda-role
+```
+
+Create/attach the project policy:
 
 ```text
 document-approval-lambda-policy
 ```
 
-The execution role must provide the permissions required by the Lambda functions:
+The role needs the permissions required by the Lambda functions, including:
 
 - CloudWatch Logs
-- DynamoDB access to `document-approvals`
-- S3 access required for document storage
+- DynamoDB access
+- S3 access
 - SNS publish
 
-Then create:
+Follow least privilege and scope resource ARNs where supported.
 
-```text
-document-approval-lambda-role
-```
+📸 Screenshot:
 
-Trusted entity:
-
-```text
-AWS service → Lambda
-```
-
-Attach the policy to the role.
-
-Screenshot: `screenshots/03-iam-role.png`
-
-> Keep resource ARNs scoped to the actual resources whenever the AWS service supports resource-level permissions.
+[`screenshots/03-iam-role.png`](screenshots/03-iam-role.png)
 
 ---
 
-## Step 4 — Lambda: `submit-handler`
+<a id="step-4"></a>
 
-Create a Lambda function:
+## Step 4 — ⚡ `submit-handler`
+
+Create the Lambda function:
 
 ```text
 submit-handler
 ```
 
-Runtime:
+### Runtime
 
 ```text
 Python 3.12
 ```
 
-Execution role:
+### Execution role
 
 ```text
 document-approval-lambda-role
 ```
 
-Deploy the project `submit-handler` code.
-
-Environment variables:
-
-| Key | Value |
-|---|---|
-| `TABLE_NAME` | `document-approvals` |
-| `TOPIC_ARN` | SNS Topic ARN |
-| `APP_BASE_URL` | API Gateway Invoke URL |
-| `ALLOWED_ORIGIN` | CloudFront domain |
-
-Timeout:
+### Environment variables
 
 ```text
-15 seconds
+TABLE_NAME
+TOPIC_ARN
+APP_BASE_URL
+ALLOWED_ORIGIN
 ```
 
-The function handles the submission and creates the approval workflow.
+At this point `APP_BASE_URL` will eventually be the API Gateway Invoke URL.
 
-Screenshot: `screenshots/04-lambda-submit-config.png`
+### Responsibility
+
+The function handles the submission workflow:
+
+```text
+Validate
+   ↓
+Store PDF in S3
+   ↓
+Create DynamoDB record
+   ↓
+PENDING
+   ↓
+Publish SNS notification
+```
+
+📸 Screenshot:
+
+[`screenshots/04-lambda-submit-config.png`](screenshots/04-lambda-submit-config.png)
 
 ---
 
-## Step 5 — Lambda: `decision-handler`
+<a id="step-5"></a>
+
+## Step 5 — ⚡ `decision-handler`
 
 Create:
 
@@ -154,32 +191,26 @@ Create:
 decision-handler
 ```
 
-Runtime:
+### Runtime
 
 ```text
 Python 3.12
 ```
 
-Role:
+### Execution role
 
 ```text
 document-approval-lambda-role
 ```
 
-Environment variables:
-
-| Key | Value |
-|---|---|
-| `TABLE_NAME` | `document-approvals` |
-| `TOPIC_ARN` | SNS Topic ARN |
-
-Timeout:
+### Environment variables
 
 ```text
-15 seconds
+TABLE_NAME
+TOPIC_ARN
 ```
 
-The function receives:
+### Expected query parameters
 
 ```text
 doc_id
@@ -194,31 +225,44 @@ approve
 reject
 ```
 
-The important authorization check is:
+### Decision flow
 
-```python
-if item.get("decision_token") != token:
-    return _html_response(403, "Invalid or expired approval link.")
+```text
+Request
+  ↓
+Validate parameters
+  ↓
+Read DynamoDB
+  ↓
+Validate token
+  ↓
+Check status == PENDING
+  ↓
+Update status
+  ↓
+Return HTML confirmation
 ```
 
-It also checks that the current status is `PENDING` before updating the document.
+📸 Screenshot:
 
-Screenshot: `screenshots/05-lambda-decision-config.png`
+[`screenshots/05-lambda-decision-config.png`](screenshots/05-lambda-decision-config.png)
 
 ---
 
-## Step 6 — API Gateway
+<a id="step-6"></a>
 
-Create:
+## Step 6 — 🔌 API Gateway
 
-```text
-document-approval-api
-```
-
-Type:
+Create a:
 
 ```text
 REST API
+```
+
+Name:
+
+```text
+document-approval-api
 ```
 
 Endpoint type:
@@ -227,26 +271,43 @@ Endpoint type:
 Regional
 ```
 
-### `/submit`
+### Resource 1 — `/submit`
 
-- Resource: `submit`
-- Method: `POST`
-- Lambda proxy integration
-- Lambda: `submit-handler`
-- Enable CORS
+Create:
 
-### `/decision`
+```text
+POST /submit
+```
 
-- Resource: `decision`
-- Method: `GET`
-- Lambda proxy integration
-- Lambda: `decision-handler`
+Integration:
 
-The decision link is opened directly by the browser, so it does not use the frontend JavaScript CORS flow.
+```text
+Lambda proxy
+→ submit-handler
+```
+
+Enable CORS for the frontend flow.
+
+### Resource 2 — `/decision`
+
+Create:
+
+```text
+GET /decision
+```
+
+Integration:
+
+```text
+Lambda proxy
+→ decision-handler
+```
+
+The approval/rejection URL is opened directly from an email, so this endpoint returns the HTML decision result.
 
 ### Deploy
 
-Create stage:
+Create a stage:
 
 ```text
 prod
@@ -260,45 +321,75 @@ Example:
 https://<api-id>.execute-api.eu-north-1.amazonaws.com/prod
 ```
 
-Screenshot: `screenshots/06-apigateway-invoke.png`
+📸 Screenshot:
+
+[`screenshots/06-apigateway-invoke.png`](screenshots/06-apigateway-invoke.png)
 
 ---
 
-## Step 7 — Temporary `APP_BASE_URL`
+<a id="step-7"></a>
 
-Before finalizing the frontend, configure:
+## Step 7 — 🔗 Configure `APP_BASE_URL`
 
-**Lambda → `submit-handler` → Configuration → Environment variables**
+Go to:
+
+```text
+Lambda
+→ submit-handler
+→ Configuration
+→ Environment variables
+```
 
 Set:
 
 ```text
-APP_BASE_URL = <API Gateway Invoke URL>
+APP_BASE_URL =
+https://<api-id>.execute-api.eu-north-1.amazonaws.com/prod
 ```
 
-The approval links must point to API Gateway because `/decision` is an API endpoint.
+### Important
+
+Do **not** use the CloudFront URL here.
+
+The approval link must point to:
+
+```text
+/decision
+```
+
+and `/decision` is handled by API Gateway.
 
 ---
 
-## Step 8 — S3 Frontend Bucket
+<a id="step-8"></a>
 
-Create:
+## Step 8 — 🪣 Frontend S3 Bucket
+
+Create a dedicated S3 bucket for the frontend.
+
+Example:
 
 ```text
 document-approval-frontend-<account-id>
 ```
 
-Region:
+Use the same AWS region as the project:
 
 ```text
 eu-north-1
 ```
 
-Security:
+### Security
+
+Keep:
 
 ```text
 Block all public access = ON
 ```
+
+Do not make the bucket public.
+
+### Upload
 
 Upload the frontend files, including:
 
@@ -306,28 +397,55 @@ Upload the frontend files, including:
 index.html
 ```
 
-Do not make the bucket public.
+and any CSS/JavaScript/assets used by the project.
 
-Screenshot: `screenshots/08-s3-bucket.png`
+📸 Screenshot:
+
+[`screenshots/08-s3-bucket.png`](screenshots/08-s3-bucket.png)
 
 ---
 
-## Step 9 — CloudFront + OAC
+<a id="step-9"></a>
 
-Use the current CloudFront distribution workflow.
+## Step 9 — 🌍 CloudFront + OAC
 
-1. Open **CloudFront → Distributions → Create distribution**.
-2. Origin type: **Amazon S3**.
-3. Select the frontend S3 bucket.
-4. Enable:
+This uses the **current CloudFront distribution creation flow**.
+
+Go to:
+
+```text
+CloudFront
+→ Distributions
+→ Create distribution
+```
+
+### 9.1 Origin type
+
+Choose:
+
+```text
+Amazon S3
+```
+
+Select the frontend S3 bucket.
+
+### 9.2 Private S3 access
+
+Enable:
 
 ```text
 Allow private S3 bucket access to CloudFront
 ```
 
-This configures Origin Access Control (OAC).
+This creates/uses:
 
-### Origin settings
+```text
+Origin Access Control (OAC)
+```
+
+The bucket remains private.
+
+### 9.3 Origin settings
 
 Use:
 
@@ -335,16 +453,28 @@ Use:
 Use recommended origin settings
 ```
 
-### Cache / viewer settings
+for the normal S3 static frontend configuration.
 
-For a normal static frontend:
+### 9.4 Viewer protocol
+
+Use:
 
 ```text
-Viewer protocol policy: Redirect HTTP to HTTPS
-Allowed methods: GET, HEAD
+Redirect HTTP to HTTPS
 ```
 
-### Default root object
+### 9.5 Allowed methods
+
+For the static frontend:
+
+```text
+GET
+HEAD
+```
+
+The form's `POST /submit` request goes to **API Gateway**, not to the CloudFront S3 origin.
+
+### 9.6 Default root object
 
 Set:
 
@@ -352,9 +482,9 @@ Set:
 index.html
 ```
 
-For this learning project, leave additional WAF protections disabled unless you intentionally decide to add them.
+### 9.7 Create distribution
 
-Create the distribution and wait for deployment.
+Create the distribution and wait until it becomes deployed.
 
 Copy the CloudFront domain:
 
@@ -362,32 +492,38 @@ Copy the CloudFront domain:
 https://<distribution-id>.cloudfront.net
 ```
 
-If CloudFront provides a generated S3 bucket policy, copy it to:
+### 9.8 S3 bucket policy
 
-**S3 → Bucket → Permissions → Bucket policy**
-
-The bucket remains private.
-
-Screenshots:
+If CloudFront provides a generated S3 bucket policy, apply it to the frontend bucket under:
 
 ```text
-screenshots/09-cloudfront-distribution.png
-screenshots/09-s3-bucket-policy.png
+S3
+→ Bucket
+→ Permissions
+→ Bucket policy
 ```
+
+The policy should allow the CloudFront distribution to read the objects while the bucket remains private.
+
+📸 Screenshots:
+
+[`screenshots/09-cloudfront-distribution.png`](screenshots/09-cloudfront-distribution.png)
+
+[`screenshots/09-s3-bucket-policy.png`](screenshots/09-s3-bucket-policy.png)
 
 ---
 
-## Step 10 — Frontend Upload
+<a id="step-10"></a>
 
-Make sure the frontend uses the real API Gateway URL.
+## Step 10 — 📤 Upload / Verify Frontend
 
-The browser sends:
+Make sure the frontend is configured to call:
 
 ```text
-POST <API_GATEWAY_URL>/submit
+<API_GATEWAY_URL>/submit
 ```
 
-Upload the updated frontend files to the private S3 bucket.
+Upload the final frontend files to S3.
 
 Then open:
 
@@ -395,53 +531,112 @@ Then open:
 https://<distribution-id>.cloudfront.net
 ```
 
-Confirm the frontend loads through CloudFront.
+Verify:
+
+```text
+Frontend loads
+HTTPS works
+CSS/JavaScript load
+```
 
 ---
 
-## Step 11 — Final `APP_BASE_URL` & CORS
+<a id="step-11"></a>
+
+## Step 11 — 🔒 Final `APP_BASE_URL` + CORS
+
+Return to:
+
+```text
+Lambda
+→ submit-handler
+→ Configuration
+→ Environment variables
+```
+
+### `APP_BASE_URL`
+
+Set:
+
+```text
+APP_BASE_URL =
+<API Gateway Invoke URL>
+```
+
+Example:
+
+```text
+https://<api-id>.execute-api.eu-north-1.amazonaws.com/prod
+```
+
+### `ALLOWED_ORIGIN`
+
+Set:
+
+```text
+ALLOWED_ORIGIN =
+https://<distribution-id>.cloudfront.net
+```
+
+### Remember the difference
+
+```text
+APP_BASE_URL
+      ↓
+API Gateway
+      ↓
+/decision
+```
+
+while:
+
+```text
+ALLOWED_ORIGIN
+      ↓
+CloudFront
+      ↓
+Browser CORS
+```
+
+📸 Screenshot:
+
+[`screenshots/11-lambda-env-updated.png`](screenshots/11-lambda-env-updated.png)
+
+---
+
+<a id="step-12"></a>
+
+## Step 12 — ✅ End-to-End Test
+
+### Test 1 — Open the application
 
 Open:
 
-**Lambda → `submit-handler` → Configuration → Environment variables**
-
-Set:
-
 ```text
-APP_BASE_URL = <API Gateway Invoke URL>
+https://<distribution-id>.cloudfront.net
 ```
 
-Important:
-
-> `APP_BASE_URL` is the API Gateway Invoke URL, not the CloudFront URL. The approval links target `/decision`, which is an API Gateway endpoint.
-
-Set:
+Expected:
 
 ```text
-ALLOWED_ORIGIN = https://<distribution-id>.cloudfront.net
+Frontend loads successfully
 ```
 
-Use the real CloudFront domain.
+📸
 
-Screenshot:
+[`screenshots/12-fulltest-submit.png`](screenshots/12-fulltest-submit.png)
+
+### Test 2 — Submit a small PDF
+
+Submit a test document.
+
+Expected:
 
 ```text
-screenshots/11-lambda-env-updated.png
+Submission successful
 ```
 
----
-
-## Step 12 — End-to-End Test
-
-### 1. Open the frontend
-
-Open the CloudFront URL.
-
-### 2. Submit a small PDF
-
-Fill in the required information and submit the document.
-
-### 3. Check DynamoDB
+### Test 3 — Check DynamoDB
 
 Open:
 
@@ -449,77 +644,98 @@ Open:
 document-approvals
 ```
 
-Confirm:
+Expected:
 
 ```text
 status = PENDING
 ```
 
-### 4. Check the approver email
+### Test 4 — Check approver email
 
-Confirm the email contains:
+The approver should receive an email containing:
 
 ```text
 Approve
 Reject
 ```
 
-### 5. Click Approve
+📸
 
-The flow is:
+[`screenshots/12-fulltest-approval-email.png`](screenshots/12-fulltest-approval-email.png)
+
+### Test 5 — Approve
+
+Click the Approve link.
+
+Expected flow:
 
 ```text
-Email Link
+Email
   ↓
 API Gateway /decision
   ↓
 decision-handler
   ↓
 DynamoDB
+  ↓
+APPROVED
 ```
 
-The browser should display a simple HTML confirmation page.
+The browser should show a simple confirmation HTML page.
 
-### 6. Check DynamoDB again
+📸
 
-Confirm:
+[`screenshots/12-fulltest-decision-page.png`](screenshots/12-fulltest-decision-page.png)
+
+### Test 6 — Verify DynamoDB
+
+Expected:
 
 ```text
 PENDING → APPROVED
 ```
 
-For rejection:
+For Reject:
 
 ```text
 PENDING → REJECTED
 ```
 
-### 7. Check the result notification
+📸
 
-Confirm the configured SNS notification path sends the decision result.
+[`screenshots/12-fulltest-dynamodb-status.png`](screenshots/12-fulltest-dynamodb-status.png)
 
-Screenshots:
+### Test 7 — Verify notification
 
-```text
-screenshots/12-fulltest-submit.png
-screenshots/12-fulltest-approval-email.png
-screenshots/12-fulltest-decision-page.png
-screenshots/12-fulltest-dynamodb-status.png
-```
+Confirm the configured SNS notification flow sends the decision result.
 
 ---
 
-## Cleanup
+<a id="cleanup"></a>
 
-Although the architecture is serverless, serverless does not mean permanently free.
+## Step 13 — 🧹 Cleanup
 
-If the project is no longer needed, delete the resources manually:
+Serverless does **not** mean permanently free.
 
-1. CloudFront distribution
-2. S3 frontend bucket
-3. S3 document bucket
-4. API Gateway
-5. Lambda functions
-6. DynamoDB table
-7. SNS topic/subscriptions
-8. IAM role/policy if no longer used
+If the project is no longer needed, remove resources carefully.
+
+Recommended order:
+
+1. Disable/delete the CloudFront distribution after it is disabled.
+2. Empty and delete the frontend S3 bucket.
+3. Empty and delete the document S3 bucket.
+4. Delete the API Gateway.
+5. Delete the Lambda functions.
+6. Delete the DynamoDB table.
+7. Delete the SNS topic/subscriptions.
+8. Delete the IAM role/policy if they are no longer used.
+
+> Keep the project resources if you are still actively demonstrating or testing it, but monitor AWS Billing/Cost Explorer.
+
+---
+
+<div align="center">
+
+[⬆️ Back to top](#top)
+
+</div>
