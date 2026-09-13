@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Approval — Submit</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #1e293b; border-radius: 16px; padding: 32px; max-width: 480px; width: 100%; }
+    h1 { font-size: 22px; margin-bottom: 20px; }
+    form { display: flex; flex-direction: column; gap: 14px; }
+    label { font-size: 13px; font-weight: 600; color: #cbd5e1; }
+    input { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; color: #e2e8f0; font-size: 14px; }
+    button { background: #6366f1; color: white; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; }
+    button:disabled { opacity: 0.6; }
+    .status { margin-top: 16px; padding: 10px 12px; border-radius: 8px; font-size: 14px; display: none; }
+    .status.success { display: block; background: rgba(34,197,94,0.15); color: #4ade80; }
+    .status.error { display: block; background: rgba(239,68,68,0.15); color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Submit Document for Approval</h1>
+    <form id="submit-form">
+      <label>Your Name</label>
+      <input type="text" id="submitter_name" required>
+      <label>Your Email</label>
+      <input type="email" id="submitter_email" required>
+      <label>Document Title</label>
+      <input type="text" id="title" required>
+      <label>File (PDF)</label>
+      <input type="file" id="file" accept="application/pdf" required>
+      <button type="submit" id="submit-btn">Submit for Approval</button>
+    </form>
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    const API_URL = "PASTE_YOUR_INVOKE_URL_HERE";
+
+    document.getElementById('submit-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      const statusBox = document.getElementById('status');
+      const fileInput = document.getElementById('file');
+      const file = fileInput.files[0];
+
+      if (!file) return;
+
+      btn.disabled = true;
+      btn.textContent = "Submitting...";
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        const payload = {
+          submitter_name: submitter_name.value,
+          submitter_email: submitter_email.value,
+          title: title.value,
+          file_name: file.name,
+          file_base64: base64,
+        };
+
+        try {
+          const res = await fetch(`${API_URL}/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          statusBox.className = res.ok ? "status success" : "status error";
+          statusBox.textContent = res.ok ? data.message : data.error;
+          if (res.ok) document.getElementById('submit-form').reset();
+        } catch (err) {
+          statusBox.className = "status error";
+          statusBox.textContent = "Failed to submit. Please try again.";
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Submit for Approval";
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  </script>
+</body>
+</html>
