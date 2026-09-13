@@ -112,7 +112,7 @@ The complete workflow was tested from frontend submission through approval and D
 
 ### Decision page
 
-![Full Test - Decision Page](screenshots/12-fulltest-decision-page.png)
+![Full Test - S3 Page](screenshots/12-fulltest-decision-page.png)
 
 ### DynamoDB status
 
