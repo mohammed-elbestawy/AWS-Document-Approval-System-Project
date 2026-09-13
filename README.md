@@ -116,7 +116,7 @@ The complete workflow was tested successfully from document submission through t
 
 ![Full Test - Approval Email](screenshots/12-fulltest-approval-email.png)
 
-### 3. Decision Page
+### 3. S3 Page
 
 ![Full Test - Decision Page](screenshots/12-fulltest-decision-page.png)
 
