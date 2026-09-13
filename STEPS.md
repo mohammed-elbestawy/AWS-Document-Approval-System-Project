@@ -22,7 +22,6 @@
 | 10 | 📤 [Upload Frontend](#step-10) |
 | 11 | 🔧 [Final Environment Variables + CORS](#step-11) |
 | 12 | ✅ [End-to-End Test](#step-12) |
-| 13 | 🧹 [Cleanup](#step-13) |
 
 ---
 
@@ -348,19 +347,13 @@ Open the CloudFront URL and submit a small test PDF.
 
 ![Full test — submit](screenshots/12-fulltest-submit.png)
 
-### 12.2 Check the approval email
-
-Confirm that the approver receives the notification with the decision links.
-
-![Full test — approval email](screenshots/12-fulltest-approval-email.png)
-
-### 12.3 Open the decision link
+### 12.2 Open the decision link
 
 Click **Approve** or **Reject** and verify that the decision page is returned.
 
 ![Full test — decision page](screenshots/12-fulltest-decision-page.png)
 
-### 12.4 Verify DynamoDB
+### 12.3 Verify DynamoDB
 
 The document status should move from:
 
@@ -381,26 +374,6 @@ REJECTED
 ```
 
 ![Full test — DynamoDB status](screenshots/12-fulltest-dynamodb-status.png)
-
----
-
-<a id="step-13"></a>
-
-## Step 13 — 🧹 Cleanup
-
-If the project is no longer needed, remove the AWS resources to avoid future usage charges.
-
-Recommended cleanup order:
-
-1. Disable and then delete the CloudFront distribution.
-2. Empty and delete the S3 buckets if their contents are no longer needed.
-3. Delete the API Gateway API.
-4. Delete the Lambda functions.
-5. Delete the DynamoDB table.
-6. Delete the SNS topic and subscription.
-7. Delete the IAM role/policy if they are no longer used.
-
-If you are still using the project for learning or presentation, it can remain deployed while you monitor AWS Billing.
 
 ---
 
