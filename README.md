@@ -110,7 +110,7 @@ The complete workflow was tested from frontend submission through approval and D
 
 ![Full Test - Approval Email](screenshots/12-fulltest-approval-email.png)
 
-### Decision page
+### S3 page
 
 ![Full Test - S3 Page](screenshots/12-fulltest-decision-page.png)
 
