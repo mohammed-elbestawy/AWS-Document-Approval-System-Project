@@ -337,9 +337,13 @@ ALLOWED_ORIGIN=https://<distribution-id>.cloudfront.net
 
 <a id="step-12"></a>
 
+---
+
 ## Step 12 — ✅ End-to-End Test
 
 Test the workflow from beginning to end.
+
+---
 
 ### 12.1 Submit the PDF
 
@@ -347,11 +351,15 @@ Open the CloudFront URL and submit a small test PDF.
 
 ![Full test — submit](screenshots/12-fulltest-submit.png)
 
+---
+
 ### 12.2 Open the decision link
 
 Click **Approve** or **Reject** and verify that the decision page is returned.
 
 ![Full test — decision page](screenshots/12-fulltest-decision-page.png)
+
+---
 
 ### 12.3 Verify DynamoDB
 
@@ -374,6 +382,13 @@ REJECTED
 ```
 
 ![Full test — DynamoDB status](screenshots/12-fulltest-dynamodb-status.png)
+
+---
+
+### 12.4 Verify S3
+
+
+![Full test — S3 Page](screenshots/12-fulltest-S3.png)
 
 ---
 
