@@ -14,18 +14,19 @@ A serverless workflow where a submitted PDF gets approved or rejected through a 
 ---
 
 ### Contents
-- 🎯 [The Problem](#-the-problem)
-- 🏗️ [Architecture](#️-architecture)
-- 🔐 [Security Decisions](#-security-decisions)
-- 🧠 [Skills Demonstrated](#-skills-demonstrated)
-- ✅ [End-to-End Test](#-end-to-end-test)
-- 💰 [Cost](#-cost)
-- 🚀 [Possible Improvements](#-possible-improvements)
-- 📚 [Documentation](#-documentation)
-- 📁 [Repository Structure](#-repository-structure)
+- 🎯 [The Problem](#problem)
+- 🏗️ [Architecture](#architecture)
+- 🔐 [Security Decisions](#security)
+- 🧠 [Skills Demonstrated](#skills)
+- ✅ [End-to-End Test](#test)
+- 💰 [Cost](#cost)
+- 🚀 [Possible Improvements](#improvements)
+- 📚 [Documentation](#docs)
+- 📁 [Repository Structure](#structure)
 
 ---
 
+<a id="problem"></a>
 ## 🎯 The Problem
 
 Document approval usually means emailing a PDF, chasing the approver over chat or a call, and tracking status from memory or a spreadsheet. There's no single source of truth for where a document stands, and once the file is sent, anyone holding a copy of the link could act on it.
@@ -39,6 +40,7 @@ Document approval usually means emailing a PDF, chasing the approver over chat o
 
 ---
 
+<a id="architecture"></a>
 ## 🏗️ Architecture
 
 <div align="center">
@@ -88,16 +90,18 @@ No EC2 or application server involved.
 
 ---
 
+<a id="security"></a>
 ## 🔐 Security Decisions
 
 - **Private S3 + CloudFront/OAC** — the frontend bucket is never public; CloudFront is the only path in, so there's no direct-S3-URL exposure.
 - **Per-document token** — authorizes one specific decision without requiring the approver to log in.
-  > Deliberately scoped: it proves *"this token matches this document,"* not *"who this person is."* A production version would add authenticated approvers and token expiration — see [Possible Improvements](#-possible-improvements).
+  > Deliberately scoped: it proves *"this token matches this document,"* not *"who this person is."* A production version would add authenticated approvers and token expiration — see [Possible Improvements](#improvements).
 - **CORS restricted to the real CloudFront domain** instead of `*`, so only the actual frontend can call the API from a browser.
 - **State check before transition** — `decision-handler` refuses to act on a document that isn't still `PENDING`, which blocks a stale or reused email link from re-triggering a decision.
 
 ---
 
+<a id="skills"></a>
 ## 🧠 Skills Demonstrated
 
 - Splitting submission and decision logic into two independent Lambda functions, so the two halves of the workflow don't share failure modes
@@ -107,6 +111,7 @@ No EC2 or application server involved.
 
 ---
 
+<a id="test"></a>
 ## ✅ End-to-End Test
 
 The full workflow was tested from submission through the approval decision and DynamoDB status update.
@@ -127,6 +132,7 @@ State path confirmed: `PENDING → APPROVED` or `PENDING → REJECTED`.
 
 ---
 
+<a id="cost"></a>
 ## 💰 Cost
 
 No component here bills by the hour, so nothing needs to be torn down between demos:
@@ -140,6 +146,7 @@ No component here bills by the hour, so nothing needs to be torn down between de
 
 ---
 
+<a id="improvements"></a>
 ## 🚀 Possible Improvements
 
 - Replace the per-document token with authenticated approver identity (real login instead of a link-based token)
@@ -149,6 +156,7 @@ No component here bills by the hour, so nothing needs to be torn down between de
 
 ---
 
+<a id="docs"></a>
 ## 📚 Documentation
 
 - **[STEPS.md](STEPS.md)** — full build log with configuration screenshots
@@ -156,6 +164,7 @@ No component here bills by the hour, so nothing needs to be torn down between de
 
 ---
 
+<a id="structure"></a>
 ## 📁 Repository Structure
 
 ```
