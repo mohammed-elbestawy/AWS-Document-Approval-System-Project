@@ -22,6 +22,8 @@ The architecture, service roles, and security decisions behind the approval work
 | State check before transition | Blocks a stale or reused email link from re-triggering a decision |
 | No EC2 | Fully managed compute via Lambda — no server to patch or run |
 
+---
+
 ### Contents
 - 🏗️ [Architecture](#architecture)
 - 🌍 [Frontend Delivery](#frontend-delivery)
