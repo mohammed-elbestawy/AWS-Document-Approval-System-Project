@@ -23,26 +23,27 @@ The architecture, service roles, and security decisions behind the approval work
 | No EC2 | Fully managed compute via Lambda — no server to patch or run |
 
 ### Contents
-- 🏗️ [Architecture](#️-architecture)
-- 🌍 [Frontend Delivery](#-frontend-delivery--s3--cloudfront--oac)
-- 📤 [Document Submission Flow](#-document-submission-flow)
-- ✅ [Approval / Rejection Flow](#-approval--rejection-flow)
-- 🗃️ [DynamoDB — Workflow State](#️-dynamodb--workflow-state)
-- 📣 [SNS — Email Notifications](#-sns--email-notifications)
-- ⚡ [Serverless Design](#-serverless-design)
-- 🔌 [API Gateway](#-api-gateway)
-- 🔑 [Approval Token](#-approval-token)
-- 🔒 [Security Decisions](#-security-decisions)
-- 🛡️ [IAM — Least Privilege](#️-iam--least-privilege)
-- 💰 [Cost Considerations](#-cost-considerations)
+- 🏗️ [Architecture](#architecture)
+- 🌍 [Frontend Delivery](#frontend-delivery)
+- 📤 [Document Submission Flow](#submission-flow)
+- ✅ [Approval / Rejection Flow](#approval-flow)
+- 🗃️ [DynamoDB — Workflow State](#dynamodb-state)
+- 📣 [SNS — Email Notifications](#sns-notifications)
+- ⚡ [Serverless Design](#serverless-design)
+- 🔌 [API Gateway](#api-gateway)
+- 🔑 [Approval Token](#approval-token)
+- 🔒 [Security Decisions](#security-decisions)
+- 🛡️ [IAM — Least Privilege](#iam)
+- 💰 [Cost Considerations](#cost)
 
 ---
 
+<a id="architecture"></a>
 ## 🏗️ Architecture
 
 ![Architecture Diagram](screenshots/architecture-diagram.png)
 
-Each AWS service in this project has one clear responsibility:
+Each AWS service in this project has one clear responsibility.
 
 ```
 User
@@ -73,6 +74,7 @@ The document starts in `PENDING` and moves to `APPROVED` or `REJECTED`.
 
 ---
 
+<a id="frontend-delivery"></a>
 ## 🌍 Frontend Delivery — S3 + CloudFront + OAC
 
 ```
@@ -87,6 +89,7 @@ Internet → CloudFront → Origin Access Control (OAC) → Private S3 Bucket
 
 ---
 
+<a id="submission-flow"></a>
 ## 📤 Document Submission Flow
 
 ```
@@ -101,6 +104,7 @@ Frontend → POST /submit → API Gateway → submit-handler
 
 ---
 
+<a id="approval-flow"></a>
 ## ✅ Approval / Rejection Flow
 
 ```
@@ -115,6 +119,7 @@ Keeping `submit-handler` and `decision-handler` as separate functions means the 
 
 ---
 
+<a id="dynamodb-state"></a>
 ## 🗃️ DynamoDB — Workflow State
 
 The identifier is `doc_id`; the state is one of `PENDING`, `APPROVED`, `REJECTED`.
@@ -137,6 +142,7 @@ The identifier is `doc_id`; the state is one of `PENDING`, `APPROVED`, `REJECTED
 
 ---
 
+<a id="sns-notifications"></a>
 ## 📣 SNS — Email Notifications
 
 ```
@@ -147,6 +153,7 @@ A managed notification layer means the project never has to run or maintain its 
 
 ---
 
+<a id="serverless-design"></a>
 ## ⚡ Serverless Design
 
 No EC2, application server, or load balancer anywhere in the stack.
@@ -159,6 +166,7 @@ Lambda runs the logic on demand; S3, DynamoDB, and SNS handle storage and notifi
 
 ---
 
+<a id="api-gateway"></a>
 ## 🔌 API Gateway
 
 | Route | Used by |
@@ -170,6 +178,7 @@ API Gateway keeps the frontend decoupled from the Lambda implementation and give
 
 ---
 
+<a id="approval-token"></a>
 ## 🔑 Approval Token
 
 ```
@@ -182,6 +191,7 @@ doc_id + token + action → decision-handler → DynamoDB
 
 ---
 
+<a id="security-decisions"></a>
 ## 🔒 Security Decisions
 
 | Control | What it does |
@@ -194,6 +204,7 @@ doc_id + token + action → decision-handler → DynamoDB
 
 ---
 
+<a id="iam"></a>
 ## 🛡️ IAM — Least Privilege
 
 ```
@@ -204,6 +215,7 @@ Each Lambda's permissions are limited to what it actually needs — its own S3 b
 
 ---
 
+<a id="cost"></a>
 ## 💰 Cost Considerations
 
 Serverless doesn't mean every resource is permanently free. Usage-based charges can come from S3 storage/requests, CloudFront transfer, API Gateway requests, Lambda execution, DynamoDB usage, and SNS usage.
