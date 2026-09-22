@@ -13,6 +13,19 @@ A serverless workflow where a submitted PDF gets approved or rejected through a 
 
 ---
 
+### Contents
+- 🎯 [The Problem](#-the-problem)
+- 🏗️ [Architecture](#️-architecture)
+- 🔐 [Security Decisions](#-security-decisions)
+- 🧠 [Skills Demonstrated](#-skills-demonstrated)
+- ✅ [End-to-End Test](#-end-to-end-test)
+- 💰 [Cost](#-cost)
+- 🚀 [Possible Improvements](#-possible-improvements)
+- 📚 [Documentation](#-documentation)
+- 📁 [Repository Structure](#-repository-structure)
+
+---
+
 ## 🎯 The Problem
 
 Document approval usually means emailing a PDF, chasing the approver over chat or a call, and tracking status from memory or a spreadsheet. There's no single source of truth for where a document stands, and once the file is sent, anyone holding a copy of the link could act on it.
