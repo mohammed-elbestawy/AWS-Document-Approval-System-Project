@@ -13,22 +13,25 @@ A record of the resources created and the configuration used to build the docume
 ---
 
 ### Contents
-- 🗃️ [DynamoDB — Approval State](#️-dynamodb--approval-state)
-- 📣 [SNS — Approval Notifications](#-sns--approval-notifications)
-- 🔐 [IAM — Lambda Execution Role](#-iam--lambda-execution-role)
-- 🪣 [S3 — Document Storage](#️-s3--document-storage)
-- ⚡ [Lambda — submit-handler](#-lambda--submit-handler)
-- ⚡ [Lambda — decision-handler](#-lambda--decision-handler)
-- 🔌 [API Gateway](#-api-gateway)
-- 🌐 [Frontend — S3 Bucket](#-frontend--s3-bucket)
-- 🌍 [CloudFront + OAC](#-cloudfront--oac)
-- 📤 [Frontend Upload](#-frontend-upload)
-- 🔧 [Environment Variables + CORS](#-environment-variables--cors)
-- ✅ [End-to-End Test](#-end-to-end-test)
+- 🗃️ [DynamoDB — Approval State](#dynamodb)
+- 📣 [SNS — Approval Notifications](#sns)
+- 🔐 [IAM — Lambda Execution Role](#iam)
+- 🪣 [S3 — Document Storage](#s3-storage)
+- ⚡ [Lambda — submit-handler](#submit-handler)
+- ⚡ [Lambda — decision-handler](#decision-handler)
+- 🔌 [API Gateway](#api-gateway)
+- 🌐 [Frontend — S3 Bucket](#frontend-bucket)
+- 🌍 [CloudFront + OAC](#cloudfront)
+- 📤 [Frontend Upload](#frontend-upload)
+- 🔧 [Environment Variables + CORS](#env-vars)
+- ✅ [End-to-End Test](#e2e-test)
 
 ---
 
+<a id="dynamodb"></a>
 ## 🗃️ DynamoDB — Approval State
+
+The single table every other function reads and writes to track where a document stands.
 
 | Field | Value |
 |:---|:---|
@@ -41,7 +44,10 @@ A record of the resources created and the configuration used to build the docume
 
 ---
 
+<a id="sns"></a>
 ## 📣 SNS — Approval Notifications
+
+Delivers the approve/reject links to the person who needs to act, without building a notification system from scratch.
 
 | Field | Value |
 |:---|:---|
@@ -55,27 +61,34 @@ A record of the resources created and the configuration used to build the docume
 
 ---
 
+<a id="iam"></a>
 ## 🔐 IAM — Lambda Execution Role
 
-Scoped access to what the functions actually use:
+One role covering exactly what the two Lambda functions touch — nothing broader.
 
-`CloudWatch Logs` · `S3` · `DynamoDB` · `SNS`
+Scoped access to: `CloudWatch Logs` · `S3` · `DynamoDB` · `SNS`
 
-Permissions are limited to the specific resources and actions each function needs — not broad service-level access.
+Permissions are limited to the specific resources and actions each function needs — not blanket service-level access.
 
 ![IAM role configuration](screenshots/03-iam-role.png)
 
 ---
 
+<a id="s3-storage"></a>
 ## 🪣 S3 — Document Storage
 
-Private bucket for uploaded PDFs — not publicly readable at any point in the flow.
+Holds the uploaded PDFs. Never exposed directly — everything reads through the app layer, not the bucket.
+
+Private bucket, not publicly readable at any point in the flow.
 
 ![S3 storage configuration](screenshots/04-s3-storage.png)
 
 ---
 
+<a id="submit-handler"></a>
 ## ⚡ Lambda — submit-handler
+
+Handles the incoming submission end to end: validating it, storing it, and notifying the approver.
 
 | Field | Value |
 |:---|:---|
@@ -100,7 +113,10 @@ Publish SNS approval notification
 
 ---
 
+<a id="decision-handler"></a>
 ## ⚡ Lambda — decision-handler
+
+Processes the Approve/Reject click — the only function allowed to change a document's state.
 
 | Field | Value |
 |:---|:---|
@@ -115,7 +131,10 @@ Validates the document, token, action, and current state before updating DynamoD
 
 ---
 
+<a id="api-gateway"></a>
 ## 🔌 API Gateway
+
+The HTTP front door — two routes, each mapped to one Lambda.
 
 | Route | Purpose |
 |:---|:---|
@@ -128,13 +147,19 @@ The API Gateway Invoke URL is used as the base URL for the approval links.
 
 ---
 
+<a id="frontend-bucket"></a>
 ## 🌐 Frontend — S3 Bucket
+
+Hosts the static site files that CloudFront serves.
 
 Static files (`index.html`, `style.css`, `script.js`) sit in a private bucket. CloudFront is the only public entry point.
 
 ---
 
+<a id="cloudfront"></a>
 ## 🌍 CloudFront + OAC
+
+The public entry point for the frontend, configured so the S3 bucket behind it never has to be public.
 
 | Setting | Value |
 |:---|:---|
@@ -153,15 +178,19 @@ CloudFront/OAC is the trusted path for reading the private frontend bucket — t
 
 ---
 
+<a id="frontend-upload"></a>
 ## 📤 Frontend Upload
+
+Gets the built frontend live once the bucket and distribution exist.
 
 Frontend files uploaded to the bucket. The bucket is never made public to serve the site — CloudFront + OAC stays the only access path.
 
 ---
 
+<a id="env-vars"></a>
 ## 🔧 Environment Variables + CORS
 
-Set once the API Gateway and CloudFront URLs exist:
+Wires the deployed URLs back into the Lambda functions once they're known.
 
 | Variable | Value | Why |
 |:---|:---|:---|
@@ -172,7 +201,10 @@ Set once the API Gateway and CloudFront URLs exist:
 
 ---
 
+<a id="e2e-test"></a>
 ## ✅ End-to-End Test
+
+Confirms the whole chain — submission to decision to stored state — actually works together.
 
 <div align="center">
 
