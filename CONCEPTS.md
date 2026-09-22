@@ -1,28 +1,48 @@
+<div align="center">
+
 # 🧠 Design Concepts — AWS Serverless Document Approval System
 
-A clean explanation of the architecture, AWS services, security decisions, and approval workflow used in the project.
+The architecture, service roles, and security decisions behind the approval workflow, with the reasoning behind each.
 
-### Contents
-- [Architecture](#architecture)
-- [Frontend Delivery](#frontend-delivery--s3--cloudfront--oac)
-- [Document Submission Flow](#document-submission-flow)
-- [Approval / Rejection Flow](#approval--rejection-flow)
-- [DynamoDB — Workflow State](#dynamodb--workflow-state)
-- [SNS — Email Notifications](#sns--email-notifications)
-- [Serverless Design](#serverless-design)
-- [API Gateway](#api-gateway)
-- [Approval Token](#approval-token)
-- [Security Decisions](#security-decisions)
-- [IAM — Least Privilege](#iam--least-privilege)
-- [Cost Considerations](#cost-considerations)
+![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
+![Region](https://img.shields.io/badge/Region-eu--north--1-232F3E?style=flat-square)
+
+</div>
 
 ---
 
-## Architecture
+### At a Glance
+
+| Decision | Why |
+|:---|:---|
+| CloudFront + OAC over public S3 | Public HTTPS delivery without ever exposing the bucket |
+| Per-document token, not full auth | Lightweight authorization scoped to one decision, not a login system |
+| CORS restricted to the real origin | Only the actual frontend can call the API from a browser |
+| State check before transition | Blocks a stale or reused email link from re-triggering a decision |
+| No EC2 | Fully managed compute via Lambda — no server to patch or run |
+
+### Contents
+- 🏗️ [Architecture](#️-architecture)
+- 🌍 [Frontend Delivery](#-frontend-delivery--s3--cloudfront--oac)
+- 📤 [Document Submission Flow](#-document-submission-flow)
+- ✅ [Approval / Rejection Flow](#-approval--rejection-flow)
+- 🗃️ [DynamoDB — Workflow State](#️-dynamodb--workflow-state)
+- 📣 [SNS — Email Notifications](#-sns--email-notifications)
+- ⚡ [Serverless Design](#-serverless-design)
+- 🔌 [API Gateway](#-api-gateway)
+- 🔑 [Approval Token](#-approval-token)
+- 🔒 [Security Decisions](#-security-decisions)
+- 🛡️ [IAM — Least Privilege](#️-iam--least-privilege)
+- 💰 [Cost Considerations](#-cost-considerations)
+
+---
+
+## 🏗️ Architecture
 
 ![Architecture Diagram](screenshots/architecture-diagram.png)
 
-The project is built as a serverless approval workflow. Each AWS service has one clear responsibility.
+Each AWS service in this project has one clear responsibility:
 
 ```
 User
@@ -49,86 +69,55 @@ submit-handler
  DynamoDB
 ```
 
-The document starts in `PENDING` and can then move to `APPROVED` or `REJECTED`.
+The document starts in `PENDING` and moves to `APPROVED` or `REJECTED`.
 
 ---
 
-## Frontend Delivery — S3 + CloudFront + OAC
-
-The frontend is a static website, so its files live in Amazon S3. The S3 frontend bucket stays private; CloudFront is the public delivery layer.
+## 🌍 Frontend Delivery — S3 + CloudFront + OAC
 
 ```
-Internet
-   ↓
-CloudFront
-   ↓
-Origin Access Control (OAC)
-   ↓
-Private S3 Bucket
+Internet → CloudFront → Origin Access Control (OAC) → Private S3 Bucket
 ```
 
-**Why CloudFront?** It provides the public HTTPS delivery layer for the frontend and can cache static files close to users.
-
-**Why OAC?** It lets CloudFront access the private S3 bucket without making the bucket publicly readable — the path is `User → CloudFront → S3`, never direct public access to the S3 objects.
-
-**Why no S3 Static Website Hosting?** The project uses the S3 REST origin with CloudFront/OAC, so static website hosting isn't required for a private-bucket design.
+| Question | Answer |
+|:---|:---|
+| Why CloudFront? | Public HTTPS delivery layer, with caching for static files close to users |
+| Why OAC? | Lets CloudFront read the private bucket without making it publicly readable — the path stays `User → CloudFront → S3`, never direct public access |
+| Why not S3 static website hosting? | The project uses the S3 REST origin with CloudFront/OAC, which doesn't require static website hosting for a private-bucket design |
 
 ---
 
-## Document Submission Flow
+## 📤 Document Submission Flow
 
 ```
-Frontend
-   ↓
-POST /submit
-   ↓
-API Gateway
-   ↓
-submit-handler
-   ↓
-┌───────────────┬────────────────┬────────────────┐
-│               │                │                │
-▼               ▼                ▼                ▼
-S3           DynamoDB          SNS          Approval Email
-PDF           PENDING        Notification       │
-                                                 │
-                                                 ▼
-                                         Approve / Reject
+Frontend → POST /submit → API Gateway → submit-handler
+                                              │
+                          ┌───────────────────┼───────────────────┐
+                          ▼                   ▼                   ▼
+                       S3 (PDF)         DynamoDB (PENDING)   SNS → Approval Email
 ```
 
-`submit-handler` owns the submission logic: it stores the document, creates the approval record, and sends the notification.
+`submit-handler` owns the submission logic end to end: storing the document, creating the approval record, and firing the notification.
 
 ---
 
-## Approval / Rejection Flow
-
-The approver receives links for both possible decisions. The links reach `GET /decision` with the document ID, token, and requested action, processed by `decision-handler`.
+## ✅ Approval / Rejection Flow
 
 ```
-Approver
-   ↓
-Approve / Reject link
-   ↓
-API Gateway
-   ↓
-decision-handler
-   ↓
-Validate request
-   ↓
-Check token + current status
-   ↓
-Update DynamoDB
-   ↓
-APPROVED / REJECTED
+Approver → Approve/Reject link → API Gateway → decision-handler
+                                                      │
+                                    Validate request → Check token + status
+                                                      │
+                                          Update DynamoDB → APPROVED / REJECTED
 ```
 
-Keeping `submit-handler` and `decision-handler` separate means the two halves of the workflow don't share a failure mode.
+Keeping `submit-handler` and `decision-handler` as separate functions means the two halves of the workflow don't share a failure mode.
 
 ---
 
-## DynamoDB — Workflow State
+## 🗃️ DynamoDB — Workflow State
 
-The main identifier is `doc_id`. The approval state is one of `PENDING`, `APPROVED`, `REJECTED`.
+The identifier is `doc_id`; the state is one of `PENDING`, `APPROVED`, `REJECTED`.
 
 ```
              ┌───────────┐
@@ -136,7 +125,6 @@ The main identifier is `doc_id`. The approval state is one of `PENDING`, `APPROV
              └─────┬─────┘
                    │
             ┌──────┴──────┐
-            │             │
          Approve        Reject
             │             │
             ▼             ▼
@@ -145,99 +133,79 @@ The main identifier is `doc_id`. The approval state is one of `PENDING`, `APPROV
        └──────────┘  └──────────┘
 ```
 
-`decision-handler` checks the current state before changing it — this stops a document that's no longer pending from being treated as a new approval decision.
+`decision-handler` checks the current state before changing it — this stops a document that's no longer pending from being treated as a fresh decision.
 
 ---
 
-## SNS — Email Notifications
+## 📣 SNS — Email Notifications
 
 ```
-Lambda
-   ↓
-SNS Topic
-   ↓
-Email Subscription
-   ↓
-Approver
+Lambda → SNS Topic → Email Subscription → Approver
 ```
 
-Using a managed notification layer means the project doesn't need to run or manage its own email server.
+A managed notification layer means the project never has to run or maintain its own mail infrastructure.
 
 ---
 
-## Serverless Design
+## ⚡ Serverless Design
 
-No EC2, application server, or load balancer.
+No EC2, application server, or load balancer anywhere in the stack.
 
 ```
-API Gateway
-     ↓
-   Lambda
-     ↓
-S3 / DynamoDB / SNS
+API Gateway → Lambda → S3 / DynamoDB / SNS
 ```
 
-**Benefits here:** no server administration, no OS maintenance — Lambda runs the logic on demand, while S3, DynamoDB, and SNS provide managed storage and notifications.
+Lambda runs the logic on demand; S3, DynamoDB, and SNS handle storage and notifications as managed services — no OS to patch, no server to keep alive.
 
 ---
 
-## API Gateway
+## 🔌 API Gateway
 
-Two routes:
-- **`POST /submit`** — used by the frontend to submit the document
-- **`GET /decision`** — used by the Approve/Reject links sent in the email
+| Route | Used by |
+|:---|:---|
+| `POST /submit` | The frontend, to submit a document |
+| `GET /decision` | The Approve/Reject links sent by email |
 
-API Gateway keeps the frontend separate from the Lambda implementation and gives the project a clear API layer.
+API Gateway keeps the frontend decoupled from the Lambda implementation and gives the project a clear API boundary.
 
 ---
 
-## Approval Token
+## 🔑 Approval Token
 
 ```
-doc_id + token + action
-          ↓
-   decision-handler
-          ↓
-       DynamoDB
+doc_id + token + action → decision-handler → DynamoDB
 ```
 
-`decision-handler` verifies the token matches the requested document before processing the action.
+`decision-handler` verifies the token matches the requested document before acting on it.
 
 > **Important distinction:** the approval token is not a full user-authentication system — it authorizes *this specific document decision*, not *this specific person*. A production version would add authenticated approvers, token expiration, and one-time-use tokens.
 
 ---
 
-## Security Decisions
+## 🔒 Security Decisions
 
-- **Private S3 bucket** — the frontend bucket isn't publicly readable; CloudFront/OAC is the access path.
-- **HTTPS** — CloudFront redirects HTTP requests to HTTPS.
-- **Restricted CORS** — the frontend origin is set to the real CloudFront domain instead of `*`. CORS controls which browser origins can make cross-origin requests; it doesn't replace backend authorization.
-- **Input validation** — the Lambda functions validate incoming data before processing it.
-- **Approval state validation** — `decision-handler` checks the current DynamoDB status before applying a new decision.
+| Control | What it does |
+|:---|:---|
+| Private S3 bucket | Not publicly readable; CloudFront/OAC is the only access path |
+| HTTPS everywhere | CloudFront redirects HTTP requests to HTTPS |
+| Restricted CORS | Frontend origin set to the real CloudFront domain instead of `*` — CORS controls browser origins, it doesn't replace backend authorization |
+| Input validation | Lambda functions validate incoming data before processing it |
+| Approval state validation | `decision-handler` checks the current DynamoDB status before applying a new decision |
 
 ---
 
-## IAM — Least Privilege
-
-Lambda accesses AWS resources through IAM execution roles, scoped to:
+## 🛡️ IAM — Least Privilege
 
 ```
 Required actions + Required resources = Least privilege
 ```
 
-Permissions are limited to what each Lambda actually needs — the relevant S3 bucket, DynamoDB table, SNS topic, and CloudWatch Logs. This reduces the blast radius if a function or its credentials are ever misused.
+Each Lambda's permissions are limited to what it actually needs — its own S3 bucket, DynamoDB table, SNS topic, and CloudWatch Logs. This keeps the blast radius small if a function or its credentials are ever misused.
 
 ---
 
-## Cost Considerations
+## 💰 Cost Considerations
 
-Serverless doesn't mean every resource is permanently free. Usage-based charges can come from:
+Serverless doesn't mean every resource is permanently free. Usage-based charges can come from S3 storage/requests, CloudFront transfer, API Gateway requests, Lambda execution, DynamoDB usage, and SNS usage.
 
-- S3 storage and requests
-- CloudFront data transfer and requests
-- API Gateway requests
-- Lambda execution
-- DynamoDB usage
-- SNS usage
-
-For a small learning project, the workload stays very low — but billing should still be monitored.
+For a small learning project the workload stays very low — but billing is still worth monitoring.
