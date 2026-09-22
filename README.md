@@ -1,53 +1,40 @@
-<a id="top"></a>
+<div align="center">
 
 # 📄 AWS Serverless Document Approval System
 
-> A fully serverless AWS workflow for submitting PDF documents, notifying an approver by email, and processing **Approve / Reject** decisions through secure per-document links.
+A serverless workflow where a submitted PDF gets approved or rejected through a secure, one-click email link — no login required for the approver, and no manual tracking of who approved what.
 
-![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat&logo=amazonaws&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Tested-brightgreen)
+![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Complete-2EA44F?style=flat-square)
+![Region](https://img.shields.io/badge/Region-eu--north--1-232F3E?style=flat-square)
+
+</div>
 
 ---
 
-## 📋 Table of Contents
+## 🎯 The Problem
 
-| Section | Description |
+Document approval usually means emailing a PDF, chasing the approver over chat or a call, and tracking status from memory or a spreadsheet. There's no single source of truth for where a document stands, and once the file is sent, anyone holding a copy of the link could act on it.
+
+| Risk / Inefficiency | How this project handles it |
 |---|---|
-| 🎯 [Overview](#overview) | What the project does |
-| 🏗 [Architecture](#architecture) | High-level AWS architecture |
-| ☁️ [AWS Services](#services) | Services and responsibilities |
-| 🔐 [Security](#security) | Main security controls |
-| ✅ [End-to-End Test](#test) | Complete test results |
-| 📁 [Project Structure](#structure) | Repository organization |
-| 📚 [Documentation](#documentation) | STEPS and CONCEPTS |
-| 💰 [Cost](#cost) | Cost considerations |
+| No single source of truth for approval status | DynamoDB holds one authoritative state per document: `PENDING → APPROVED / REJECTED` |
+| Chasing approvers manually | SNS emails the approver directly with one-click decision links — no dashboard login needed |
+| A stale or resent link could still "work" | Each decision link carries a per-document token the backend validates before acting |
+| A document could be approved twice (double-click, reused old email) | `decision-handler` checks the document is still `PENDING` before applying any new decision |
 
 ---
 
-<a id="overview"></a>
+## 🏗️ Architecture
 
-## 🎯 Overview
-
-This project implements a **serverless document approval workflow on AWS**.
-
-A user opens the frontend through **CloudFront**, submits a PDF, and the request is handled by **API Gateway** and Lambda. The document is stored in S3, its approval state is stored in DynamoDB, and SNS sends the approver an email containing the decision links.
-
-The approver can choose **Approve** or **Reject**. The decision is processed by a separate Lambda function and the document state is updated in DynamoDB.
-
-There is **no EC2 instance or traditional application server**.
-
----
-
-<a id="architecture"></a>
-
-## 🏗 Architecture
+<div align="center">
 
 ![AWS Document Approval System Architecture](screenshots/architecture-diagram.png)
 
-The main flow is:
+</div>
 
-```text
+```
 User
   ↓
 CloudFront + OAC
@@ -69,129 +56,104 @@ submit-handler
           └── DynamoDB
 ```
 
----
+<div align="center">
 
-<a id="services"></a>
+| Service | Role |
+|:---|:---|
+| **Amazon S3** | Stores the static frontend and uploaded PDF documents |
+| **Amazon CloudFront** | Delivers the frontend over HTTPS |
+| **Origin Access Control (OAC)** | Lets CloudFront read the private frontend bucket without making it public |
+| **API Gateway** | Exposes `POST /submit` and `GET /decision` |
+| **AWS Lambda** | Runs the submission and decision logic |
+| **Amazon DynamoDB** | Stores document metadata, token, and approval status |
+| **Amazon SNS** | Sends email notifications |
+| **AWS IAM** | Scopes each Lambda's permissions to what it actually needs |
 
-## ☁️ AWS Services
+</div>
 
-- **Amazon S3** — stores the static frontend and uploaded PDF documents.
-- **Amazon CloudFront** — delivers the frontend over HTTPS.
-- **Origin Access Control (OAC)** — allows CloudFront to access the private frontend bucket.
-- **API Gateway** — exposes `POST /submit` and `GET /decision`.
-- **AWS Lambda** — contains the submission and decision logic.
-- **Amazon DynamoDB** — stores document metadata, token and approval status.
-- **Amazon SNS** — sends email notifications.
-- **AWS IAM** — controls Lambda permissions.
-
-**Deployment region:** `eu-north-1`
-
----
-
-<a id="security"></a>
-
-## 🔐 Security
-
-- Frontend S3 bucket remains **private**.
-- CloudFront uses **Origin Access Control (OAC)** to access the bucket.
-- HTTP is redirected to HTTPS through CloudFront.
-- CORS is restricted to the actual CloudFront origin.
-- Approval requests use a document ID and per-document token.
-- The decision flow checks that the document is still `PENDING` before changing its status.
-- Lambda functions use IAM execution roles for AWS service access.
+No EC2 or application server involved.
 
 ---
 
-<a id="test"></a>
+## 🔐 Security Decisions
+
+- **Private S3 + CloudFront/OAC** — the frontend bucket is never public; CloudFront is the only path in, so there's no direct-S3-URL exposure.
+- **Per-document token** — authorizes one specific decision without requiring the approver to log in.
+  > Deliberately scoped: it proves *"this token matches this document,"* not *"who this person is."* A production version would add authenticated approvers and token expiration — see [Possible Improvements](#-possible-improvements).
+- **CORS restricted to the real CloudFront domain** instead of `*`, so only the actual frontend can call the API from a browser.
+- **State check before transition** — `decision-handler` refuses to act on a document that isn't still `PENDING`, which blocks a stale or reused email link from re-triggering a decision.
+
+---
+
+## 🧠 Skills Demonstrated
+
+- Splitting submission and decision logic into two independent Lambda functions, so the two halves of the workflow don't share failure modes
+- Enforcing idempotent state transitions server-side instead of trusting the frontend or the email link
+- Choosing OAC over public S3 hosting to keep the frontend bucket private end-to-end
+- Being explicit about what a lightweight token *doesn't* provide (real authentication) rather than presenting it as a complete security model
+
+---
 
 ## ✅ End-to-End Test
 
-The complete workflow was tested successfully from document submission through the approval decision and DynamoDB status update.
+The full workflow was tested from submission through the approval decision and DynamoDB status update.
 
-### 1. Submit
+<div align="center">
 
-![Full Test - Submit](screenshots/12-fulltest-submit.png)
+| Step | Result |
+|:---:|:---:|
+| **1. Submit** | ![Submit](screenshots/12-fulltest-submit.png) |
+| **2. Approval Email** | ![Approval Email](screenshots/12-fulltest-approval-email.png) |
+| **3. Decision Page** | ![Decision Page](screenshots/12-fulltest-decision-page.png) |
+| **4. DynamoDB Status** | ![DynamoDB Status](screenshots/12-fulltest-dynamodb-status.png) |
+| **5. S3 Storage** | ![S3](screenshots/12-fulltest-S3.png) |
 
-### 2. Approval Email
+</div>
 
-![Full Test - Approval Email](screenshots/12-fulltest-approval-email.png)
-
-### 3. Email Page
-
-![Full Test - Decision Page](screenshots/12-fulltest-decision-page.png)
-
-### 4. DynamoDB Status
-
-![Full Test - DynamoDB Status](screenshots/12-fulltest-dynamodb-status.png)
-
-The document state follows:
-
-```text
-PENDING → APPROVED
-```
-
-or
-
-```text
-PENDING → REJECTED
-```
+State path confirmed: `PENDING → APPROVED` or `PENDING → REJECTED`.
 
 ---
 
-<a id="structure"></a>
+## 💰 Cost
 
-## 📁 Project Structure
+No component here bills by the hour, so nothing needs to be torn down between demos:
 
-```text
+| Service | Why it's near-zero cost here |
+|:---|:---|
+| S3 / CloudFront | Storage and requests fall well inside the always-free tiers at this volume |
+| API Gateway / Lambda | Free tier covers 1M+ requests/month; a demo workload uses a fraction of that |
+| DynamoDB (on-demand) | Pay-per-request with no idle cost, unlike a provisioned database |
+| SNS | Free tier covers far more than the email volume this project generates |
+
+---
+
+## 🚀 Possible Improvements
+
+- Replace the per-document token with authenticated approver identity (real login instead of a link-based token)
+- Add token expiration and one-time-use enforcement to remove the replay risk of an old email
+- Log who approved/rejected and when, not just the current state
+- Move to Infrastructure as Code (Terraform) for repeatable deployment
+
+---
+
+## 📚 Documentation
+
+- **[STEPS.md](STEPS.md)** — full build log with configuration screenshots
+- **[CONCEPTS.md](CONCEPTS.md)** — extended design rationale for each decision above
+
+---
+
+## 📁 Repository Structure
+
+```
 AWS-Document-Approval-System-Project/
 │
 ├── README.md
 ├── STEPS.md
 ├── CONCEPTS.md
 ├── screenshots/
-│   ├── architecture-diagram.png
-│   ├── 01-dynamodb.png
-│   ├── 02-sns-topic.png
-│   ├── 03-iam-role.png
-│   ├── 04-s3-storage.png
-│   ├── 05-lambda-submit-config.png
-│   ├── 06-lambda-decision-config.png
-│   ├── 07-apigateway-invoke.png
-│   ├── 09-cloudfront-distribution.png
-│   ├── 09-s3-bucket-policy.png
-│   ├── 11-lambda-env-updated.png
-│   └── 12-fulltest-*.png
-│
 ├── code/
 │   ├── frontend/
 │   └── lambda/
-│
 └── iam/
 ```
-
----
-
-<a id="documentation"></a>
-
-## 📚 Documentation
-
-- 🛠 **[STEPS.md](STEPS.md)** — complete build and configuration steps with the project screenshots.
-- 🧠 **[CONCEPTS.md](CONCEPTS.md)** — architecture, AWS service roles, security decisions and workflow concepts.
-
----
-
-<a id="cost"></a>
-
-## 💰 Cost
-
-The architecture is serverless, but **serverless does not automatically mean free**. AWS charges can depend on storage, requests, traffic and execution across the services used.
-
-For a small learning/demo workload, usage is expected to be low. AWS Billing should still be monitored.
-
----
-
-<div align="center">
-
-[⬆️ Back to top](#top)
-
-</div>
