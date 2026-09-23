@@ -22,21 +22,20 @@ The architecture, service roles, and security decisions behind the approval work
 | State check before transition | Blocks a stale or reused email link from re-triggering a decision |
 | No EC2 | Fully managed compute via Lambda — no server to patch or run |
 
----
-
 ### Contents
-- 🏗️ [Architecture](#architecture)
-- 🌍 [Frontend Delivery](#frontend-delivery)
-- 📤 [Document Submission Flow](#submission-flow)
-- ✅ [Approval / Rejection Flow](#approval-flow)
-- 🗃️ [DynamoDB — Workflow State](#dynamodb-state)
-- 📣 [SNS — Email Notifications](#sns-notifications)
-- ⚡ [Serverless Design](#serverless-design)
-- 🔌 [API Gateway](#api-gateway)
-- 🔑 [Approval Token](#approval-token)
-- 🔒 [Security Decisions](#security-decisions)
-- 🛡️ [IAM — Least Privilege](#iam)
-- 💰 [Cost Considerations](#cost)
+
+[![Architecture](https://img.shields.io/badge/Architecture-30363D?style=flat-square)](#architecture)
+[![Frontend Delivery](https://img.shields.io/badge/Frontend_Delivery-30363D?style=flat-square)](#frontend-delivery)
+[![Submission Flow](https://img.shields.io/badge/Submission_Flow-30363D?style=flat-square)](#submission-flow)
+[![Approval Flow](https://img.shields.io/badge/Approval_Flow-30363D?style=flat-square)](#approval-flow)
+[![DynamoDB State](https://img.shields.io/badge/DynamoDB_State-30363D?style=flat-square)](#dynamodb-state)
+[![SNS Notifications](https://img.shields.io/badge/SNS_Notifications-30363D?style=flat-square)](#sns-notifications)
+[![Serverless Design](https://img.shields.io/badge/Serverless_Design-30363D?style=flat-square)](#serverless-design)
+[![API Gateway](https://img.shields.io/badge/API_Gateway-30363D?style=flat-square)](#api-gateway)
+[![Approval Token](https://img.shields.io/badge/Approval_Token-30363D?style=flat-square)](#approval-token)
+[![Security Decisions](https://img.shields.io/badge/Security_Decisions-30363D?style=flat-square)](#security-decisions)
+[![IAM](https://img.shields.io/badge/IAM-30363D?style=flat-square)](#iam)
+[![Cost](https://img.shields.io/badge/Cost-30363D?style=flat-square)](#cost)
 
 ---
 
