@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🧠 Design Concepts — AWS Serverless Document Approval System
+# 🧠 Design Concepts & Rationale
 
-The architecture, service roles, and security decisions behind the approval workflow, with the reasoning behind each.
+This file explains **why** each decision was made — the questions most likely to come up in an interview.
 
 ![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -24,201 +24,81 @@ The architecture, service roles, and security decisions behind the approval work
 
 ### Contents
 
-[![Architecture](https://img.shields.io/badge/Architecture-30363D?style=flat-square)](#architecture)
-[![Frontend Delivery](https://img.shields.io/badge/Frontend_Delivery-30363D?style=flat-square)](#frontend-delivery)
-[![Submission Flow](https://img.shields.io/badge/Submission_Flow-30363D?style=flat-square)](#submission-flow)
-[![Approval Flow](https://img.shields.io/badge/Approval_Flow-30363D?style=flat-square)](#approval-flow)
-[![DynamoDB State](https://img.shields.io/badge/DynamoDB_State-30363D?style=flat-square)](#dynamodb-state)
-[![SNS Notifications](https://img.shields.io/badge/SNS_Notifications-30363D?style=flat-square)](#sns-notifications)
-[![Serverless Design](https://img.shields.io/badge/Serverless_Design-30363D?style=flat-square)](#serverless-design)
-[![API Gateway](https://img.shields.io/badge/API_Gateway-30363D?style=flat-square)](#api-gateway)
-[![Approval Token](https://img.shields.io/badge/Approval_Token-30363D?style=flat-square)](#approval-token)
-[![Security Decisions](https://img.shields.io/badge/Security_Decisions-30363D?style=flat-square)](#security-decisions)
-[![IAM](https://img.shields.io/badge/IAM-30363D?style=flat-square)](#iam)
+[![Architecture & Flow](https://img.shields.io/badge/Architecture_%26_Flow-30363D?style=flat-square)](#architecture)
+[![Workflow State](https://img.shields.io/badge/Workflow_State-30363D?style=flat-square)](#state)
+[![Notifications](https://img.shields.io/badge/Notifications-30363D?style=flat-square)](#notifications)
+[![API & Authorization](https://img.shields.io/badge/API_%26_Authorization-30363D?style=flat-square)](#api)
+[![Security](https://img.shields.io/badge/Security-30363D?style=flat-square)](#security)
 [![Cost](https://img.shields.io/badge/Cost-30363D?style=flat-square)](#cost)
 
 ---
 
 <a id="architecture"></a>
-## 🏗️ Architecture
+## 🏗️ Architecture & Flow
 
 ![Architecture Diagram](screenshots/architecture-diagram.png)
 
-Each AWS service in this project has one clear responsibility.
-
 ```
-User
-  ↓
-CloudFront + OAC
-  ↓
-Private S3
-  ↓
-API Gateway
-  ↓
-submit-handler
-  ├── S3
-  ├── DynamoDB
-  └── SNS
-       ↓
-  Approver Email
-       ↓
- Approve / Reject
-       ↓
- GET /decision
-       ↓
- decision-handler
-       ↓
- DynamoDB
-```
-
-The document starts in `PENDING` and moves to `APPROVED` or `REJECTED`.
-
----
-
-<a id="frontend-delivery"></a>
-## 🌍 Frontend Delivery — S3 + CloudFront + OAC
-
-```
-Internet → CloudFront → Origin Access Control (OAC) → Private S3 Bucket
+User → CloudFront + OAC → Private S3 → API Gateway → submit-handler
+                                                          ├── S3 (PDF)
+                                                          ├── DynamoDB (PENDING)
+                                                          └── SNS → Approver Email
+                                                                        ↓
+                                                              GET /decision → decision-handler → DynamoDB
 ```
 
 | Question | Answer |
 |:---|:---|
-| Why CloudFront? | Public HTTPS delivery layer, with caching for static files close to users |
-| Why OAC? | Lets CloudFront read the private bucket without making it publicly readable — the path stays `User → CloudFront → S3`, never direct public access |
-| Why not S3 static website hosting? | The project uses the S3 REST origin with CloudFront/OAC, which doesn't require static website hosting for a private-bucket design |
+| Why split submission and decision handling into two separate Lambda functions instead of one? | They're two independent lifecycles triggered by different actors at different times — the submitter and the approver never interact with the same code path. Keeping them separate means a change to one can't break the other. |
+| Why CloudFront + OAC instead of a public bucket or S3 static website hosting? | OAC lets CloudFront read the private bucket without ever exposing it directly, and it keeps delivery on HTTPS with caching. Static website hosting doesn't support that private-bucket path the same way. |
+| Why no EC2 or application server anywhere in the stack? | The workflow is bursty and infrequent — API Gateway and Lambda handle that pattern for free at low volume, with no server to patch or keep running between submissions. |
 
 ---
 
-<a id="submission-flow"></a>
-## 📤 Document Submission Flow
+<a id="state"></a>
+## 🗃️ Workflow State
 
-```
-Frontend → POST /submit → API Gateway → submit-handler
-                                              │
-                          ┌───────────────────┼───────────────────┐
-                          ▼                   ▼                   ▼
-                       S3 (PDF)         DynamoDB (PENDING)   SNS → Approval Email
-```
-
-`submit-handler` owns the submission logic end to end: storing the document, creating the approval record, and firing the notification.
-
----
-
-<a id="approval-flow"></a>
-## ✅ Approval / Rejection Flow
-
-```
-Approver → Approve/Reject link → API Gateway → decision-handler
-                                                      │
-                                    Validate request → Check token + status
-                                                      │
-                                          Update DynamoDB → APPROVED / REJECTED
-```
-
-Keeping `submit-handler` and `decision-handler` as separate functions means the two halves of the workflow don't share a failure mode.
-
----
-
-<a id="dynamodb-state"></a>
-## 🗃️ DynamoDB — Workflow State
-
-The identifier is `doc_id`; the state is one of `PENDING`, `APPROVED`, `REJECTED`.
-
-```
-             ┌───────────┐
-             │  PENDING  │
-             └─────┬─────┘
-                   │
-            ┌──────┴──────┐
-         Approve        Reject
-            │             │
-            ▼             ▼
-       ┌──────────┐  ┌──────────┐
-       │ APPROVED │  │ REJECTED │
-       └──────────┘  └──────────┘
-```
-
-`decision-handler` checks the current state before changing it — this stops a document that's no longer pending from being treated as a fresh decision.
-
----
-
-<a id="sns-notifications"></a>
-## 📣 SNS — Email Notifications
-
-```
-Lambda → SNS Topic → Email Subscription → Approver
-```
-
-A managed notification layer means the project never has to run or maintain its own mail infrastructure.
-
----
-
-<a id="serverless-design"></a>
-## ⚡ Serverless Design
-
-No EC2, application server, or load balancer anywhere in the stack.
-
-```
-API Gateway → Lambda → S3 / DynamoDB / SNS
-```
-
-Lambda runs the logic on demand; S3, DynamoDB, and SNS handle storage and notifications as managed services — no OS to patch, no server to keep alive.
-
----
-
-<a id="api-gateway"></a>
-## 🔌 API Gateway
-
-| Route | Used by |
+| Question | Answer |
 |:---|:---|
-| `POST /submit` | The frontend, to submit a document |
-| `GET /decision` | The Approve/Reject links sent by email |
-
-API Gateway keeps the frontend decoupled from the Lambda implementation and gives the project a clear API boundary.
+| Why does the state live in DynamoDB instead of being tracked through the email thread itself? | An email thread isn't queryable or enforceable — anyone could reply out of order or twice. DynamoDB gives one authoritative state (`PENDING → APPROVED/REJECTED`) the backend can actually check before acting. |
+| Why does `decision-handler` check the current state before applying a new decision? | Without that check, a stale or resent email link could re-trigger a decision on a document that's already resolved. The check makes the transition idempotent instead of repeatable. |
 
 ---
 
-<a id="approval-token"></a>
-## 🔑 Approval Token
+<a id="notifications"></a>
+## 📣 Notifications
 
-```
-doc_id + token + action → decision-handler → DynamoDB
-```
-
-`decision-handler` verifies the token matches the requested document before acting on it.
-
-> **Important distinction:** the approval token is not a full user-authentication system — it authorizes *this specific document decision*, not *this specific person*. A production version would add authenticated approvers, token expiration, and one-time-use tokens.
-
----
-
-<a id="security-decisions"></a>
-## 🔒 Security Decisions
-
-| Control | What it does |
+| Question | Answer |
 |:---|:---|
-| Private S3 bucket | Not publicly readable; CloudFront/OAC is the only access path |
-| HTTPS everywhere | CloudFront redirects HTTP requests to HTTPS |
-| Restricted CORS | Frontend origin set to the real CloudFront domain instead of `*` — CORS controls browser origins, it doesn't replace backend authorization |
-| Input validation | Lambda functions validate incoming data before processing it |
-| Approval state validation | `decision-handler` checks the current DynamoDB status before applying a new decision |
+| Why SNS instead of sending email directly from the Lambda function? | SNS is a managed notification layer — no mail server, no handling retries or delivery failures by hand. The Lambda's only job is to publish; SNS owns delivery. |
 
 ---
 
-<a id="iam"></a>
-## 🛡️ IAM — Least Privilege
+<a id="api"></a>
+## 🔌 API & Authorization
 
-```
-Required actions + Required resources = Least privilege
-```
+| Question | Answer |
+|:---|:---|
+| Why a per-document token instead of just the document ID in the link? | A bare document ID is guessable or enumerable. The token means only someone who actually received the email can act on that specific document. |
+| Is the token a substitute for real authentication? | No — deliberately not. It proves *"this token matches this document,"* not *"who this person is."* A production version would add authenticated approvers, token expiration, and one-time-use tokens. |
+| Why two separate routes (`POST /submit`, `GET /decision`) instead of one generic endpoint? | Submission and decision have completely different payloads, callers, and security needs — separate routes keep each Lambda's input validation simple and specific to its job. |
 
-Each Lambda's permissions are limited to what it actually needs — its own S3 bucket, DynamoDB table, SNS topic, and CloudWatch Logs. This keeps the blast radius small if a function or its credentials are ever misused.
+---
+
+<a id="security"></a>
+## 🔒 Security
+
+| Question | Answer |
+|:---|:---|
+| Why restrict CORS to the real CloudFront domain instead of `*`? | CORS controls which browser origins can call the API — it doesn't replace backend authorization, but scoping it to the real frontend still closes an easy, free-to-fix gap. |
+| Why does the IAM role avoid wildcard resource ARNs? | Least privilege — each Lambda only ever touches its own S3 bucket, DynamoDB table, and SNS topic. A wildcard would grant access to anything created later in the account, a bigger blast radius than the app needs. |
 
 ---
 
 <a id="cost"></a>
-## 💰 Cost Considerations
+## 💰 Cost
 
-Serverless doesn't mean every resource is permanently free. Usage-based charges can come from S3 storage/requests, CloudFront transfer, API Gateway requests, Lambda execution, DynamoDB usage, and SNS usage.
-
-For a small learning project the workload stays very low — but billing is still worth monitoring.
+| Question | Answer |
+|:---|:---|
+| Why doesn't this project need the same teardown discipline as projects using EC2 or ALB? | Every service here — S3, CloudFront, API Gateway, Lambda, DynamoDB, SNS — has an always-free tier or near-zero idle cost. Nothing bills by the hour regardless of traffic. |
+| Why On-Demand DynamoDB instead of provisioned capacity? | Approval volume is low and unpredictable at this scale — On-Demand avoids both throttling risk and paying for capacity that may sit idle. |
