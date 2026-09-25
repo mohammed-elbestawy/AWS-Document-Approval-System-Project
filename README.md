@@ -4,9 +4,9 @@
 
 A serverless workflow where a submitted PDF gets approved or rejected through a secure, one-click email link — no login required for the approver, and no manual tracking of who approved what.
 
-![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-Free%20Tier-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Complete-2EA44F?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Live%20Tested-2EA44F?style=flat-square)
 ![Region](https://img.shields.io/badge/Region-eu--north--1-232F3E?style=flat-square)
 
 </div>
